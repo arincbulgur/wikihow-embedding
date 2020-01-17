@@ -25,13 +25,13 @@ add_argument(arg_parser, 'article-path', 'articles/parsed_articles.pkl')
 add_argument(arg_parser, 'embedding-path', 'glove/glove.model')
 add_argument(arg_parser, 'occur-cutoff', 5)
 add_argument(arg_parser, 'model-folder', 'models')
-add_argument(arg_parser, 'context-encoder', 'LSTM')
+add_argument(arg_parser, 'context-encoder', 'None')
 add_argument(arg_parser, 'child-short-enc-template', 'child_short_encoder_%i.model')
 add_argument(arg_parser, 'child-full-enc-template', 'child_full_encoder_%i.model')
 add_argument(arg_parser, 'parent-enc-template', 'parent_encoder_%i.model')
 add_argument(arg_parser, 'pc-classifier-template', 'pc_classifier_%i.model')
 add_argument(arg_parser, 'step-ranker-template', 'step_ranker_%i.model')
-add_argument(arg_parser, 'iter', -1)
+add_argument(arg_parser, 'iter', 9800)
 
 args = arg_parser.parse_args()
 for k, v in vars(args).iteritems():
@@ -145,40 +145,53 @@ def top3_dcs(parent, short_steps, full_steps):
 	W = np.zeros((N, N))
 	parent_enc = parent_encoder([parent])
 	child_short_encs = child_short_encoder(short_steps)
-	child_full_encs = child_full_encoder(full_steps)
+	#child_full_encs = child_full_encoder(full_steps)
 	# print child_short_encs.shape
 	# print child_full_encs.shape
 	for i in xrange(N):
 		for j in xrange(N):
 			s1 = child_short_encs[i].view(1, -1)
 			s2 = child_short_encs[j].view(1, -1)
-			f1 = child_full_encs[i].view(1, -1)
-			f2 = child_full_encs[j].view(1, -1)
+			#f1 = child_full_encs[i].view(1, -1)
+			#f2 = child_full_encs[j].view(1, -1)
+                        f1 = None
+                        f2 = None
 			log_probs1 = step_ranker(parent_enc, s1, s2, f1, f2).detach().cpu().numpy()
 			log_probs2 = step_ranker(parent_enc, s2, s1, f2, f1).detach().cpu().numpy()
 			W[i, j] = (log_probs1[0, 0]+log_probs2[0,1]) / 2
-	dc = 3
+	dc = 0
 	X = solve(W, dc)
+        priority = np.zeros((1,N))
 	dcs = []
 	for i in xrange(N):
 		for j in xrange(i+1, N):
-			if X[i][j].value < 1e-3 and X[j][i].value < 1e-3:
+			if X[i][j].value > 1e-3:
 				dcs.append((i, j))
-	return dcs
+                                priority[0,i] = priority[0,i] + 1
+                        elif X[j][i].value > 1e-3:
+                                dcs.append((j, i))
+                                priority[0,j] = priority[0,j] + 1
+        sorted_tasks = np.argsort(priority)
+	return dcs, sorted_tasks
 
 for _ in xrange(100):
-	t, sts = step_ranking_dataset.get_random_article('dev')
-	if len(sts)<=3:
-		continue
-	shorts, fulls = zip(*sts)
-	dcs = top3_dcs(t, shorts, fulls)
+	#t, sts = step_ranking_dataset.get_random_article('dev')
+	#if len(sts)<=3:
+	#	continue
+	#shorts, fulls = zip(*sts)
+        t = "Bring water"
+        shorts = ("Exit kitchen", "Open kitchen cabinet", "Close tap", "Serve cup", "Fill cup", "Open tap", "Enter kitchen", "Take cup")
+        fulls = ()
+	dcs, sorted_tasks = top3_dcs(t, shorts, fulls)
 	print 'Title:', t
 	print 'Steps:'
 	print '\n'.join(shorts)
 	print ''
-	for i, j in dcs:
-		print shorts[i]
-		print shorts[j]
-		print ''
+	#for i, j in dcs:
+	#	print shorts[i]
+	#	print shorts[j]
+	#	print ''
+        for i in reversed(sorted_tasks.tolist()[0]):
+            print shorts[i]
 	print '\n\n\n'
 	raw_input()
